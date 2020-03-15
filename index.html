@@ -1,0 +1,96 @@
+<html lang = "en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="author" content="D. Steinmeyer">
+  <title>Using PyTorch's index_select for word embeddings</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/prismjs@1.19.0/themes/prism.min.css">
+  <style>
+    h1, h2 {font-family: "DejaVu Sans", sans-serif}
+    p {
+    font-family: "DejaVu Sans", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    }
+  </style>
+</head>
+
+<body style="width:900px;padding:10px;margin:auto">
+<h1>Using <code>torch.index_select()</code> for word embeddings</h1>
+<p>Doing assignment 3 of Stanford's CS224n (spring 2020) includes embedding a list of words, where each entry is an index leading to a single, specific word, with the corresponding word vectors as in the figure below. A possible solution is using PyTorch's <code class="language-python">index_select</code>-function, together with PyTorch's reshaping function <code class="language-python">view</code>. How these work and can be used to embed words with word vectors in a vectorised way will be shown in the following.</p>
+<p style="text-align:center;"><img src="illustration.png" alt="Illustration of word embedding" width="700px"></p>
+<p>We have two matrices: First, <code class="language-python">words</code>, which containes a list of lists of words, where each entry is an integer corresponding to a certain word; second,  <code class="language-python">embeddings</code>, whose rows are word vectors corresponding to each of the words of a vocabulary. The shapes of the matrices are <code class="language-python">words.shape = (batch_size, no_features)</code>, and <code class="language-python">embeddings.shape = (num_words, embedding_size)</code>.</p>
+
+<h2>Initialising matrices</h2>
+<p>To use the code below (or the <a href="https://github.com/dstei/pytorch-index_select-example">script in the repo</a>), torch needs to be imported. For better comparison, the random number generator will be seeded.</p>
+<pre><code class="language-python">import torch
+torch.manual_seed(0)</code></pre>
+<p>Let's first set the dimensions of the matrices (see figure above).<p>
+<pre><code class="language-python">batch_size = 2
+no_features = 3
+embedding_size = 5
+num_words = 100
+</code></pre>
+<p>Next, initialise the matrices with random entries. Then, use recognisable entries for the first entry of each of the rows (i.e. the first column), so that we can later see more easily how the matrices get transformed.</p>
+<pre><code class="language-python">words = torch.randint(100, (batch_size, no_features)) # Initialise words with random integers
+words[:, 0] = torch.arange(batch_size) # This is to mark/recognise the head of each row of words
+
+embeddings = torch.rand(num_words, embedding_size) # Initialise embeddings with random word vectors
+embeddings[:, 0] = torch.arange(num_words) # This is to mark/recognise the head of each row of embeddings
+</code></pre>
+<p>This leads to the following outputs for the matrices:</p>
+<pre><code class="language-python">>>> words
+tensor([[ 0, 39, 33],
+        [ 1, 63, 79]])
+
+>>> embeddings
+tensor([[0.0000e+00, 1.6886e-01, 2.9389e-01, 5.1852e-01, 6.9767e-01],
+        [1.0000e+00, 1.6103e-01, 2.8227e-01, 6.8161e-01, 9.1519e-01],
+        [2.0000e+00, 8.7416e-01, 4.1941e-01, 5.5291e-01, 9.5274e-01],
+        [3.0000e+00, 1.8523e-01, 3.7342e-01, 3.0510e-01, 9.3200e-01],
+        ...
+</code></pre>
+
+<h2>Transforming matrices</h2>
+<p><code class="language-python">torch.index_select()</code> does not accept a tensor with dimension 2 or higher for determining the indices to select, so we first flatten the matrix <code class="language-python">words</code>, containing all the words we want to embed:</p>
+<pre><code class="language-python">words_reshaped = words.view(batch_size*no_features)
+</code></pre>
+<p>Now, the matrix like that:</p>
+<pre><code class="language-python">>>> words_reshaped
+tensor([ 0, 39, 33,  1, 63, 79])
+</code></pre>
+<p>Note how all the rows just have been concatenated.</p>
+<p>The next step is to select for each of the indices in <code class="language-python">words</code> the corresponding word vector from <code class="language-python">embeddings</code>:</p>
+<pre><code class="language-python">selected_embeddings = torch.index_select(embeddings, 0, words_reshaped)
+</code></pre>
+<p>The first argument of <code class="language-python">torch.index_select()</code> is the matrix (tensor) to choose the entries from. The second argument specifies the dimension, along which the entry is to be chosen. The third argument gives indices, for which the entry is to be chosen. This means, for all indices <em>i</em> in the third argument, take entry #<em>i</em> of the first argument, along the dimension given in the second argument (see figure above for visualisation).</p>
+<p>The new matrix <code class="language-python">selected_embeddings</code> now looks like that:</p>
+<pre><code class="language-python">>>> selected_embeddings
+tensor([[0.0000e+00, 8.9644e-01, 4.5563e-01, 6.3231e-01, 3.4889e-01],
+        [3.9000e+01, 1.2204e-01, 1.5674e-01, 2.0967e-01, 8.4997e-01],
+        [3.3000e+01, 9.5150e-01, 6.8108e-01, 4.8770e-02, 8.1635e-01],
+        [1.0000e+00, 2.2326e-02, 1.6886e-01, 2.9389e-01, 5.1852e-01],
+        [6.3000e+01, 1.0693e-01, 5.3929e-01, 8.4623e-01, 9.5056e-01],
+        [7.9000e+01, 2.6393e-01, 9.5952e-01, 7.0447e-01, 1.2043e-01]])
+</code></pre>
+<p>Row <em>i</em> is the word vector from <code class="language-python">embeddings</code>, chosen by the index <em>i</em> of <code class="language-python">words_reshaped</code>. Note how the first row is the same as the first row in <code class="language-python">embeddings</code> and the fourth row is the same as the second row in <code class="language-python">embeddings</code> due to the first and fourth index of <code class="language-python">words_reshaped</code> being 0 and 1, respectively.</p>
+<p>The last step is to transform the result into a matrix where each row corresponds to one row of the input matrix <code class="language-python">words</code> and has all the word vectors belonging to that row concatenated:</p>
+<pre><code class="language-python">embedded_words = selected_embeddings.view(batch_size, no_features*embedding_size)
+</code></pre>
+<p><code class="language-python">embedded_words</code> now is</p>
+<pre><code class="language-python">>>> embedded_words
+tensor([[0.0000e+00, 8.9644e-01, 4.5563e-01, 6.3231e-01, 3.4889e-01, 3.9000e+01,
+         1.2204e-01, 1.5674e-01, 2.0967e-01, 8.4997e-01, 3.3000e+01, 9.5150e-01,
+         6.8108e-01, 4.8770e-02, 8.1635e-01],
+        [1.0000e+00, 2.2326e-02, 1.6886e-01, 2.9389e-01, 5.1852e-01, 6.3000e+01,
+         1.0693e-01, 5.3929e-01, 8.4623e-01, 9.5056e-01, 7.9000e+01, 2.6393e-01,
+         9.5952e-01, 7.0447e-01, 1.2043e-01]])
+</code></pre>
+
+<p>This can all be done in one line. Here, an additional feature of <code class="language-python">torch.view()</code> is used: With <code class="language-python">-1</code> as argument, it infers the resulting dimension from the other given dimension(s). If no other dimension is given, it flattens the tensor to a one-dimensional vector.</p>
+<pre><code class="language-python">embedded_words = torch.index_select(embeddings, 0, words.view(-1)).view(-1, no_features*embedding_size) #fully vectorised, i.e. fast to compute
+</code></pre>
+<p>In case of any comments or suggestions, please let me know!</p>
+
+<script src="https://cdn.jsdelivr.net/npm/prismjs@1.19.0/prism.min.js"></script>
+<script src="https://cdn.jsdelivr.net/combine/npm/prismjs@1.19.0,npm/prismjs@1.19.0/components/prism-python.min.js"></script>
+</body>
